@@ -2,6 +2,7 @@ import {
   Beef,
   BroadcastFailure,
   BroadcastResponse,
+  HTTPSOverlayLookupFacilitator,
   LookupAnswer,
   LookupResolver,
   PushDrop,
@@ -12,7 +13,15 @@ import {
   WalletInterface,
   WalletProtocol
 } from '@bsv/sdk'
-import { AppCatalogOptions, PublishedAppMetadata, AppCatalogQuery, PublishedApp } from './types/index.js'
+import {
+  AppCatalogFindAcrossHostsResult,
+  AppCatalogFindOptions,
+  AppCatalogOptions,
+  AppCatalogQuery,
+  AppCatalogLookupDiagnostics,
+  PublishedApp,
+  PublishedAppMetadata
+} from './types/index.js'
 
 /* ────────────────────────────────────────────────────────────
  * Constants
@@ -21,6 +30,19 @@ const PROTOCOL_ID: WalletProtocol = [1, 'metanet apps']
 const DEFAULT_KEY_ID = '1'
 const DEFAULT_OVERLAY_TOPIC = 'tm_apps'
 const DEFAULT_LOOKUP_SERVICE = 'ls_apps'
+
+export const DEFAULT_APP_LOOKUP_HOSTS = [
+  'https://overlay-ap-1.bsvb.tech',
+  'https://overlay-eu-1.bsvb.tech',
+  'https://overlay-us-1.bsvb.tech',
+  'https://users.bapp.dev'
+]
+
+interface ParsedLookupAnswer {
+  apps: PublishedApp[]
+  outputCount: number
+  parseFailureCount: number
+}
 
 /* ────────────────────────────────────────────────────────────
  * AppCatalog
@@ -274,23 +296,17 @@ export class AppCatalog {
    */
   async findApps(
     query: AppCatalogQuery = {},
-    opts: { resolver?: LookupResolver; wallet?: WalletInterface; includeBeef?: boolean } = { includeBeef: true }
+    opts: AppCatalogFindOptions = { includeBeef: true }
   ): Promise<PublishedApp[]> {
+    if (opts.hosts?.length) {
+      return (await this.findAppsAcrossHosts(query, opts)).apps
+    }
+
     const wallet = opts.wallet ?? this.wallet
+    const includeBeef = opts.includeBeef ?? true
 
     // --- 1. Build lookup query -----------------------------------------
-    const lookupQuery: Record<string, unknown> = {}
-    if (query.domain) lookupQuery.domain = query.domain
-    if (query.publisher) lookupQuery.publisher = query.publisher
-    if (query.name) lookupQuery.name = query.name
-    if (query.category) lookupQuery.category = query.category
-    if (query.tags?.length) lookupQuery.tags = query.tags
-    if (query.limit !== undefined) lookupQuery.limit = query.limit
-    if (query.skip !== undefined) lookupQuery.skip = query.skip
-    if (query.sortOrder) lookupQuery.sortOrder = query.sortOrder
-    if (query.startDate) lookupQuery.startDate = `${query.startDate}T00:00:00.000Z`
-    if (query.endDate) lookupQuery.endDate = `${query.endDate}T23:59:59.999Z`
-    if (opts.includeBeef === false) lookupQuery.includeBeef = false
+    const lookupQuery = this.buildLookupQuery(query, includeBeef)
 
     // --- 2. Resolve -----------------------------------------------------
     const resolver = opts.resolver ?? (await this.getResolver(wallet))
@@ -298,13 +314,87 @@ export class AppCatalog {
     const answer = await resolver.query({ service: this.overlayService, query: lookupQuery })
 
     // --- 3. Parse answer ------------------------------------------------
-    return this.parseLookupAnswer(answer, opts.includeBeef!)
+    return this.parseLookupAnswer(answer, includeBeef)
+  }
+
+  /**
+   * Finds apps by querying explicit overlay hosts directly, merging all valid
+   * results, and returning per-host diagnostics. This is useful for frontends
+   * that need stable results across regions when SLAP discovery or one overlay
+   * cluster returns a sparse catalog.
+   */
+  async findAppsAcrossHosts(
+    query: AppCatalogQuery = {},
+    opts: AppCatalogFindOptions = {}
+  ): Promise<AppCatalogFindAcrossHostsResult> {
+    const includeBeef = opts.includeBeef ?? true
+    const lookupQuery = this.buildLookupQuery(query, includeBeef)
+    const hosts = this.normalizeHosts(opts.hosts ?? DEFAULT_APP_LOOKUP_HOSTS)
+    const facilitator = opts.facilitator ?? new HTTPSOverlayLookupFacilitator()
+    const allApps: PublishedApp[] = []
+    const diagnostics: AppCatalogLookupDiagnostics = {
+      service: this.overlayService,
+      rawOutputCount: 0,
+      parsedAppCount: 0,
+      duplicateCount: 0,
+      returnedAppCount: 0,
+      hosts: []
+    }
+
+    await Promise.all(hosts.map(async host => {
+      const startedAt = Date.now()
+      try {
+        const answer = await facilitator.lookup(
+          host,
+          { service: this.overlayService, query: lookupQuery },
+          opts.timeout
+        )
+        const parsed = this.parseLookupAnswerWithStats(answer, includeBeef)
+        allApps.push(...parsed.apps)
+        diagnostics.rawOutputCount += parsed.outputCount
+        diagnostics.parsedAppCount += parsed.apps.length
+        diagnostics.hosts.push({
+          host,
+          ok: true,
+          durationMs: Date.now() - startedAt,
+          rawOutputCount: parsed.outputCount,
+          parsedAppCount: parsed.apps.length,
+          parseFailureCount: parsed.parseFailureCount
+        })
+      } catch (err) {
+        diagnostics.hosts.push({
+          host,
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          rawOutputCount: 0,
+          parsedAppCount: 0,
+          parseFailureCount: 0,
+          error: this.errorMessage(err)
+        })
+      }
+    }))
+
+    const merged = this.dedupeApps(allApps)
+    diagnostics.duplicateCount = merged.duplicateCount
+    diagnostics.returnedAppCount = merged.apps.length
+
+    return {
+      apps: merged.apps,
+      diagnostics
+    }
   }
 
   /* ───────────────────────── Helper: parse lookup ─────────────────────── */
   private parseLookupAnswer(ans: LookupAnswer, includeBeef: boolean): PublishedApp[] {
-    if (ans.type !== 'output-list' || !ans.outputs.length) return []
+    return this.parseLookupAnswerWithStats(ans, includeBeef).apps
+  }
+
+  private parseLookupAnswerWithStats(ans: LookupAnswer, includeBeef: boolean): ParsedLookupAnswer {
+    if (ans.type !== 'output-list' || !ans.outputs.length) {
+      return { apps: [], outputCount: 0, parseFailureCount: 0 }
+    }
     const apps: PublishedApp[] = []
+    let parseFailureCount = 0
 
     for (const o of ans.outputs) {
       try {
@@ -330,9 +420,69 @@ export class AppCatalog {
         })
       } catch {
         // Skip malformed records instead of failing the whole lookup.
+        parseFailureCount++
       }
     }
 
-    return apps
+    return {
+      apps,
+      outputCount: ans.outputs.length,
+      parseFailureCount
+    }
+  }
+
+  private buildLookupQuery(query: AppCatalogQuery, includeBeef: boolean): Record<string, unknown> {
+    const lookupQuery: Record<string, unknown> = {}
+    if (query.domain) lookupQuery.domain = query.domain
+    if (query.publisher) lookupQuery.publisher = query.publisher
+    if (query.name) lookupQuery.name = query.name
+    if (query.category) lookupQuery.category = query.category
+    if (query.tags?.length) lookupQuery.tags = query.tags
+    if (query.limit !== undefined) lookupQuery.limit = query.limit
+    if (query.skip !== undefined) lookupQuery.skip = query.skip
+    if (query.sortOrder) lookupQuery.sortOrder = query.sortOrder
+    if (query.startDate) lookupQuery.startDate = `${query.startDate}T00:00:00.000Z`
+    if (query.endDate) lookupQuery.endDate = `${query.endDate}T23:59:59.999Z`
+    if (!includeBeef) lookupQuery.includeBeef = false
+    return lookupQuery
+  }
+
+  private normalizeHosts(hosts: string[]): string[] {
+    const seen = new Set<string>()
+    const normalized: string[] = []
+    for (const host of hosts) {
+      const trimmed = host.trim().replace(/\/+$/, '')
+      if (!trimmed || seen.has(trimmed)) continue
+      seen.add(trimmed)
+      normalized.push(trimmed)
+    }
+    return normalized
+  }
+
+  private dedupeApps(apps: PublishedApp[]): { apps: PublishedApp[], duplicateCount: number } {
+    const unique = new Map<string, PublishedApp>()
+    let duplicateCount = 0
+
+    for (const app of apps) {
+      const key = app.token.txid
+        ? `${app.token.txid}.${app.token.outputIndex}`
+        : `domain:${app.metadata.domain.toLowerCase()}`
+
+      if (unique.has(key)) {
+        duplicateCount++
+        continue
+      }
+      unique.set(key, app)
+    }
+
+    return {
+      apps: Array.from(unique.values()),
+      duplicateCount
+    }
+  }
+
+  private errorMessage(err: unknown): string {
+    if (err instanceof Error) return err.message
+    return String(err)
   }
 }

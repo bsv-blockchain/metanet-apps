@@ -1,4 +1,4 @@
-import { WalletInterface } from '@bsv/sdk'
+import type { LookupResolver, OverlayLookupFacilitator, WalletInterface } from '@bsv/sdk'
 
 /* ────────────────────────────────────────────────────────────
  * Public types
@@ -29,6 +29,45 @@ export interface AppCatalogQuery {
   sortOrder?: 'asc' | 'desc'
   startDate?: string
   endDate?: string
+}
+
+export interface AppCatalogFindOptions {
+  resolver?: LookupResolver
+  wallet?: WalletInterface
+  includeBeef?: boolean
+  /**
+   * Optional explicit overlay hosts. When provided, findApps queries and merges
+   * these hosts directly instead of relying on SLAP discovery.
+   */
+  hosts?: string[]
+  /** Optional lookup timeout in milliseconds for each direct host request. */
+  timeout?: number
+  /** Optional custom lookup facilitator, mainly for tests or custom fetch policy. */
+  facilitator?: OverlayLookupFacilitator
+}
+
+export interface AppCatalogLookupHostDiagnostic {
+  host: string
+  ok: boolean
+  durationMs: number
+  rawOutputCount: number
+  parsedAppCount: number
+  parseFailureCount: number
+  error?: string
+}
+
+export interface AppCatalogLookupDiagnostics {
+  service: string
+  rawOutputCount: number
+  parsedAppCount: number
+  duplicateCount: number
+  returnedAppCount: number
+  hosts: AppCatalogLookupHostDiagnostic[]
+}
+
+export interface AppCatalogFindAcrossHostsResult {
+  apps: PublishedApp[]
+  diagnostics: AppCatalogLookupDiagnostics
 }
 
 /**

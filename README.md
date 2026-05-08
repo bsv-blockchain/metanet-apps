@@ -22,7 +22,7 @@ npm install metanet-apps
 ### Initializing the App Catalog
 
 ```typescript
-import { AppCatalog } from 'metanet-apps'
+import { AppCatalog, DEFAULT_APP_LOOKUP_HOSTS } from 'metanet-apps'
 
 const catalog = new AppCatalog({
   // Optional parameters:
@@ -70,6 +70,22 @@ const myApps = await catalog.findApps({ publisher: '03abcdef...' })
 const searchResults = await catalog.findApps({ name: 'awesome' })
 ```
 
+### Finding Apps Across Overlay Regions
+
+For frontends that need consistent catalog results across regions, query the
+known overlay hosts directly and merge valid results. This keeps the standard
+`findApps()` path available for existing integrations.
+
+```typescript
+const { apps, diagnostics } = await catalog.findAppsAcrossHosts(
+  { limit: 500, sortOrder: 'desc' },
+  { hosts: DEFAULT_APP_LOOKUP_HOSTS, timeout: 10000 }
+)
+
+console.log(apps.length)
+console.table(diagnostics.hosts)
+```
+
 ### Updating an App
 
 ```typescript
@@ -112,7 +128,8 @@ new AppCatalog(options: AppCatalogOptions)
 - `publishApp(metadata: PublishedAppMetadata, opts?: { wallet?: WalletInterface }): Promise<Transaction | BroadcastResponse | BroadcastFailure>`: Publishes an app to the overlay network
 - `updateApp(prev: PublishedApp, newMetadata: PublishedAppMetadata): Promise<BroadcastResponse | BroadcastFailure>`: Updates an existing app listing
 - `removeApp(prev: PublishedApp): Promise<BroadcastResponse | BroadcastFailure>`: Removes an app listing from the overlay network
-- `findApps(query?: AppCatalogQuery, opts?: { resolver?: LookupResolver, wallet?: WalletInterface, includeBeef?: boolean }): Promise<PublishedApp[]>`: Searches for apps based on the provided query with support for pagination and sorting
+- `findApps(query?: AppCatalogQuery, opts?: AppCatalogFindOptions): Promise<PublishedApp[]>`: Searches for apps based on the provided query with support for pagination and sorting. If `opts.hosts` is supplied, it queries and merges those hosts directly.
+- `findAppsAcrossHosts(query?: AppCatalogQuery, opts?: AppCatalogFindOptions): Promise<AppCatalogFindAcrossHostsResult>`: Queries explicit overlay hosts, merges valid apps, deduplicates them, and returns per-host diagnostics.
 
 ## Types
 
