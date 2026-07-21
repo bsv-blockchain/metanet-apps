@@ -8,6 +8,7 @@ export default {
 
   // Ignore compiled output
   testPathIgnorePatterns: ['dist/'],
+  modulePathIgnorePatterns: ['<rootDir>/dist/'],
   transform: {
       '^.+\\.test.ts?$': ['ts-jest', { 
         useESM: true

@@ -1,6 +1,6 @@
 {
   "name": "metanet-apps",
-  "version": "1.0.11",
+  "version": "1.1.0",
   "description": "Publish and find Metanet apps with ease",
   "type": "module",
   "main": "dist/cjs/mod.js",

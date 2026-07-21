@@ -14,6 +14,13 @@ import {
   WalletProtocol
 } from '@bsv/sdk'
 import {
+  METANET_APPS_KEY_ID,
+  METANET_APPS_LOOKUP_SERVICE,
+  METANET_APPS_PROTOCOL,
+  METANET_APPS_TOPIC
+} from './constants.js'
+import { validateAppMetadata } from './metadata.js'
+import {
   AppCatalogFindAcrossHostsResult,
   AppCatalogFindOptions,
   AppCatalogOptions,
@@ -26,11 +33,6 @@ import {
 /* ────────────────────────────────────────────────────────────
  * Constants
  * ────────────────────────────────────────────────────────── */
-const PROTOCOL_ID: WalletProtocol = [1, 'metanet apps']
-const DEFAULT_KEY_ID = '1'
-const DEFAULT_OVERLAY_TOPIC = 'tm_apps'
-const DEFAULT_LOOKUP_SERVICE = 'ls_apps'
-
 export const DEFAULT_APP_LOOKUP_HOSTS = [
   'https://overlay-ap-1.bsvb.tech',
   'https://overlay-eu-1.bsvb.tech',
@@ -60,9 +62,9 @@ export class AppCatalog {
   private broadcaster: TopicBroadcaster | undefined
 
   constructor(opts: AppCatalogOptions) {
-    this.keyID = opts.keyID ?? DEFAULT_KEY_ID
-    this.overlayTopic = opts.overlayTopic ?? DEFAULT_OVERLAY_TOPIC
-    this.overlayService = opts.overlayService ?? DEFAULT_LOOKUP_SERVICE
+    this.keyID = opts.keyID ?? METANET_APPS_KEY_ID
+    this.overlayTopic = opts.overlayTopic ?? METANET_APPS_TOPIC
+    this.overlayService = opts.overlayService ?? METANET_APPS_LOOKUP_SERVICE
     this.wallet = opts.wallet ?? new WalletClient()
     this.networkPreset = opts.networkPreset
     this.acceptDelayedBroadcast = opts.acceptDelayedBroadcast ?? false
@@ -122,9 +124,10 @@ export class AppCatalog {
   async publishApp(
     metadata: PublishedAppMetadata,
     opts: { wallet?: WalletInterface } = {}
-  ): Promise<Transaction | BroadcastResponse | BroadcastFailure> {
+  ): Promise<BroadcastResponse | BroadcastFailure> {
     const wallet = opts.wallet ?? this.wallet
     metadata.publisher = await this.getIdentityKey(wallet)
+    validateAppMetadata(metadata)
 
     // --- 1. Encode metadata as UTF‑8 bytes --------------------------------
     const jsonPayload = JSON.stringify(metadata)
@@ -133,7 +136,7 @@ export class AppCatalog {
     // --- 2. Build PushDrop locking script --------------------------------
     const lockingScript = await new PushDrop(wallet).lock(
       [payloadBytes],
-      PROTOCOL_ID,
+      METANET_APPS_PROTOCOL,
       this.keyID,
       'anyone',
       true
@@ -172,6 +175,8 @@ export class AppCatalog {
     newMetadata: PublishedAppMetadata
   ): Promise<BroadcastResponse | BroadcastFailure> {
     if (!prev.token.beef) throw new Error('App token must contain BEEF to update')
+    newMetadata.publisher = await this.getIdentityKey()
+    validateAppMetadata(newMetadata)
 
     // --- 1. Serialize new metadata --------------------------------------
     const jsonPayload = JSON.stringify(newMetadata)
@@ -180,7 +185,7 @@ export class AppCatalog {
     // --- 2. Build new PushDrop locking script ---------------------------
     const newLockingScript = await new PushDrop(this.wallet).lock(
       [payloadBytes],
-      PROTOCOL_ID,
+      METANET_APPS_PROTOCOL,
       this.keyID,
       'anyone',
       true
@@ -213,7 +218,7 @@ export class AppCatalog {
     if (!signableTransaction) throw new Error('Unable to create update transaction')
 
     // --- 4. Produce unlocking script ------------------------------------
-    const unlocker = pushdrop.unlock(PROTOCOL_ID, this.keyID, 'anyone')
+    const unlocker = pushdrop.unlock(METANET_APPS_PROTOCOL, this.keyID, 'anyone')
     const unlockingScript = await unlocker.sign(
       Transaction.fromBEEF(signableTransaction.tx),
       0
@@ -232,6 +237,56 @@ export class AppCatalog {
     // --- 6. Broadcast through overlay -----------------------------------
     const broadcaster = await this.getBroadcaster()
     return await broadcaster.broadcast(transaction)
+  }
+
+  /**
+   * Spend a token created with a legacy derivation key and replace it with a
+   * token using the catalogue's canonical key. Intended for operator recovery.
+   */
+  async migrateLegacyApp (
+    prev: PublishedApp,
+    metadata: PublishedAppMetadata,
+    legacyKeyID: string
+  ): Promise<BroadcastResponse | BroadcastFailure> {
+    if (!prev.token.beef) throw new Error('App token must contain BEEF to migrate')
+
+    metadata.publisher = await this.getIdentityKey()
+    validateAppMetadata(metadata)
+    const payloadBytes = Utils.toArray(JSON.stringify(metadata), 'utf8')
+    const newLockingScript = await new PushDrop(this.wallet).lock(
+      [payloadBytes],
+      METANET_APPS_PROTOCOL,
+      this.keyID,
+      'anyone',
+      true
+    )
+    const prevOutpoint = `${prev.token.txid}.${prev.token.outputIndex}` as const
+    const { signableTransaction } = await this.wallet.createAction({
+      description: 'AppCatalog - migrate legacy app token',
+      inputBEEF: prev.token.beef,
+      inputs: [{
+        outpoint: prevOutpoint,
+        unlockingScriptLength: 74,
+        inputDescription: 'Spend legacy Metanet App token'
+      }],
+      outputs: [{
+        satoshis: 1,
+        lockingScript: newLockingScript.toHex(),
+        outputDescription: 'Migrated Metanet App token'
+      }],
+      options: { acceptDelayedBroadcast: this.acceptDelayedBroadcast, randomizeOutputs: false }
+    })
+    if (!signableTransaction) throw new Error('Unable to create migration transaction')
+
+    const unlocker = new PushDrop(this.wallet).unlock(METANET_APPS_PROTOCOL, legacyKeyID, 'anyone')
+    const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
+    const { tx } = await this.wallet.signAction({
+      reference: signableTransaction.reference,
+      spends: { 0: { unlockingScript: unlockingScript.toHex() } }
+    })
+    if (!tx) throw new Error('Unable to finalize migration transaction')
+
+    return await (await this.getBroadcaster()).broadcast(Transaction.fromAtomicBEEF(tx))
   }
 
   /* ──────────────────────────────  Remove  ───────────────────────────── */
@@ -259,7 +314,7 @@ export class AppCatalog {
     })
     if (!signableTransaction) throw new Error('Unable to redeem app token')
 
-    const unlocker = new PushDrop(this.wallet).unlock(PROTOCOL_ID, this.keyID, 'anyone')
+    const unlocker = new PushDrop(this.wallet).unlock(METANET_APPS_PROTOCOL, this.keyID, 'anyone')
     const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
 
     const { tx } = await this.wallet.signAction({
@@ -434,6 +489,7 @@ export class AppCatalog {
   private buildLookupQuery(query: AppCatalogQuery, includeBeef: boolean): Record<string, unknown> {
     const lookupQuery: Record<string, unknown> = {}
     if (query.domain) lookupQuery.domain = query.domain
+    if (query.outpoint) lookupQuery.outpoint = query.outpoint
     if (query.publisher) lookupQuery.publisher = query.publisher
     if (query.name) lookupQuery.name = query.name
     if (query.category) lookupQuery.category = query.category
@@ -486,3 +542,8 @@ export class AppCatalog {
     return String(err)
   }
 }
+
+export * from './constants.js'
+export * from './broadcast.js'
+export * from './metadata.js'
+export * from './types/index.js'
