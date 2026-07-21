@@ -179,6 +179,7 @@ interface PublishedAppMetadataV2 {
   uhrp_url?: string
   domain: string
   publisher?: string // Automatically set by the library from wallet's identity key
+  publisher_name?: string // Human-readable publisher or author name
   short_name?: string
   category?: string
   tags?: string[]
