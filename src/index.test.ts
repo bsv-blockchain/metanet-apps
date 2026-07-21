@@ -1,5 +1,8 @@
 import type { LookupAnswer, LookupQuestion, OverlayLookupFacilitator } from '@bsv/sdk'
 import { AppCatalog } from './index.js'
+import { requireAppCatalogBroadcastSuccess } from './broadcast.js'
+import { METANET_APPS_KEY_ID, METANET_APPS_PROTOCOL } from './constants.js'
+import { AppMetadataValidationError, normalizeAppMetadata } from './metadata.js'
 
 class MockLookupFacilitator implements OverlayLookupFacilitator {
   readonly calls: Array<{ host: string, question: LookupQuestion, timeout?: number }> = []
@@ -78,5 +81,79 @@ describe('AppCatalog direct host lookup', () => {
         includeBeef: false
       }
     })
+  })
+
+  it('sends direct outpoint queries to the lookup service', async () => {
+    const facilitator = new MockLookupFacilitator({
+      'https://overlay.example': { type: 'output-list', outputs: [] }
+    })
+    const catalog = new AppCatalog({ networkPreset: 'mainnet' })
+
+    await catalog.findApps({ outpoint: `${'a'.repeat(64)}.0` }, {
+      facilitator,
+      hosts: ['https://overlay.example']
+    })
+
+    expect(facilitator.calls[0].question.query).toEqual({ outpoint: `${'a'.repeat(64)}.0` })
+  })
+})
+
+describe('Metanet Apps contract', () => {
+  it('exports the protocol and derivation key used by overlays', () => {
+    expect(METANET_APPS_PROTOCOL).toEqual([1, 'metanet apps'])
+    expect(METANET_APPS_KEY_ID).toBe('1')
+  })
+
+  it('throws a stable error for a resolved SDK broadcast failure', () => {
+    expect(() => requireAppCatalogBroadcastSuccess({
+      status: 'error',
+      code: 'ERR_ALL_HOSTS_REJECTED',
+      description: 'Rejected'
+    })).toThrow(expect.objectContaining({ code: 'ERR_ALL_HOSTS_REJECTED' }))
+  })
+
+  it('normalizes legacy metadata without conflating app and schema versions', () => {
+    const normalized = normalizeAppMetadata({
+      version: '0.1.0',
+      name: 'PaperTrade',
+      description: 'Practice trading.',
+      icon: 'https://papertrade.metanet.app/icon.png',
+      httpURL: 'https://papertrade.metanet.app',
+      domain: 'papertrade.metanet.app',
+      release_date: '2026-07-20T00:00:00Z'
+    })
+
+    expect(normalized.schema_version).toBe('0.1.0')
+    expect(normalized.app_version).toBe('0.1.0')
+    expect(normalized.domain).toBe('papertrade.metanet.app')
+    expect(normalized.launch_url).toBe('https://papertrade.metanet.app/')
+  })
+
+  it('rejects credentials and non-HTTPS launch URLs', () => {
+    expect(() => normalizeAppMetadata({
+      schema_version: '2.0',
+      app_version: '1.0.0',
+      name: 'Unsafe app',
+      description: 'Unsafe URL example.',
+      icon_url: 'https://example.com/icon.png',
+      launch_url: 'http://user:secret@example.com',
+      domain: 'example.com',
+      released_at: '2026-07-20T00:00:00Z'
+    })).toThrow(AppMetadataValidationError)
+  })
+
+  it('requires hostname-only domains and a launch target for metadata v2', () => {
+    const metadata = {
+      schema_version: '2.0',
+      app_version: '1.0.0',
+      name: 'Example',
+      description: 'Example app',
+      icon_url: 'https://example.com/icon.png',
+      domain: 'https://example.com',
+      released_at: '2026-07-20T00:00:00.000Z'
+    } as const
+
+    expect(() => normalizeAppMetadata(metadata)).toThrow(AppMetadataValidationError)
+    expect(() => normalizeAppMetadata({ ...metadata, domain: 'example.com' })).toThrow('launch_url or uhrp_url is required')
   })
 })
