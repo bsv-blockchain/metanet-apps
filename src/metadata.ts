@@ -149,6 +149,7 @@ export function normalizeAppMetadata (metadata: PublishedAppMetadata): Normalize
     launch_url: launchUrl,
     uhrp_url: optionalString(raw.uhrp_url ?? raw.uhrpURL, 'uhrp_url', APP_METADATA_LIMITS.url),
     publisher: optionalString(raw.publisher, 'publisher', 130),
+    publisher_name: optionalString(raw.publisher_name, 'publisher_name', APP_METADATA_LIMITS.name),
     short_name: optionalString(raw.short_name, 'short_name', APP_METADATA_LIMITS.shortName),
     category: optionalString(raw.category, 'category', APP_METADATA_LIMITS.category),
     tags: normalizeTags(raw.tags),

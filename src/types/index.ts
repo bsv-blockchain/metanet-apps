@@ -84,6 +84,7 @@ export interface LegacyPublishedAppMetadata {
   uhrpURL?: string
   domain: string
   publisher?: string // Automatically set by the library
+  publisher_name?: string
   short_name?: string
   category?: string
   tags?: string[]
@@ -104,6 +105,7 @@ export interface PublishedAppMetadataV2 {
   launch_url?: string
   uhrp_url?: string
   publisher?: string
+  publisher_name?: string
   short_name?: string
   category?: string
   tags?: string[]
@@ -129,6 +131,7 @@ export interface NormalizedPublishedAppMetadata {
   launch_url?: string
   uhrp_url?: string
   publisher?: string
+  publisher_name?: string
   short_name?: string
   category?: string
   tags: string[]
