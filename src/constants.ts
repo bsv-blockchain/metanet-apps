@@ -8,6 +8,3 @@ export const METANET_APPS_KEY_ID = '1'
 
 export const METANET_APPS_TOPIC = 'tm_apps'
 export const METANET_APPS_LOOKUP_SERVICE = 'ls_apps'
-
-/** Legacy key used by a historical UI release. Only use this to spend/migrate rejected outputs. */
-export const METANET_APPS_LEGACY_KEY_ID = 'default'
