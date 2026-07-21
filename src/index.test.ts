@@ -112,7 +112,7 @@ describe('Metanet Apps contract', () => {
     })).toThrow(expect.objectContaining({ code: 'ERR_ALL_HOSTS_REJECTED' }))
   })
 
-  it('normalizes legacy metadata without conflating app and schema versions', () => {
+  it('accepts canonical v0.1 metadata without rewriting publisher data', () => {
     const normalized = normalizeAppMetadata({
       version: '0.1.0',
       name: 'PaperTrade',
@@ -123,13 +123,12 @@ describe('Metanet Apps contract', () => {
       release_date: '2026-07-20T00:00:00Z'
     })
 
-    expect(normalized.schema_version).toBe('0.1.0')
-    expect(normalized.app_version).toBe('0.1.0')
+    expect(normalized.version).toBe('0.1.0')
     expect(normalized.domain).toBe('papertrade.metanet.app')
-    expect(normalized.launch_url).toBe('https://papertrade.metanet.app/')
+    expect(normalized.httpURL).toBe('https://papertrade.metanet.app')
   })
 
-  it('rejects credentials and non-HTTPS launch URLs', () => {
+  it('rejects noncanonical metadata v2', () => {
     expect(() => normalizeAppMetadata({
       schema_version: '2.0',
       app_version: '1.0.0',
@@ -139,21 +138,20 @@ describe('Metanet Apps contract', () => {
       launch_url: 'http://user:secret@example.com',
       domain: 'example.com',
       released_at: '2026-07-20T00:00:00Z'
-    })).toThrow(AppMetadataValidationError)
+    } as never)).toThrow(expect.objectContaining({ code: 'ERR_METADATA_UNSUPPORTED_SCHEMA' }))
   })
 
-  it('requires hostname-only domains and a launch target for metadata v2', () => {
+  it('mirrors the canonical topic required fields', () => {
     const metadata = {
-      schema_version: '2.0',
-      app_version: '1.0.0',
+      version: '0.1.0',
       name: 'Example',
       description: 'Example app',
-      icon_url: 'https://example.com/icon.png',
-      domain: 'https://example.com',
-      released_at: '2026-07-20T00:00:00.000Z'
+      icon: 'https://example.com/icon.png',
+      domain: 'example.com',
+      release_date: '2026-07-20T00:00:00.000Z'
     } as const
 
-    expect(() => normalizeAppMetadata(metadata)).toThrow(AppMetadataValidationError)
-    expect(() => normalizeAppMetadata({ ...metadata, domain: 'example.com' })).toThrow('launch_url or uhrp_url is required')
+    expect(() => normalizeAppMetadata(metadata as never)).toThrow(AppMetadataValidationError)
+    expect(normalizeAppMetadata({ ...metadata, httpURL: '' })).toEqual({ ...metadata, httpURL: '' })
   })
 })

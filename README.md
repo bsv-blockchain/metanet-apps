@@ -41,16 +41,15 @@ const catalog = new AppCatalog({
 
 ```typescript
 const appMetadata = {
-  schema_version: '2.0',
-  app_version: '1.0.0',
+  version: '0.1.0',
   name: 'My Awesome App',
   description: 'This app does amazing things on Metanet',
-  icon_url: 'https://example.com/icon.png',
-  launch_url: 'https://myapp.example.com/',
+  icon: 'https://example.com/icon.png',
+  httpURL: 'https://myapp.example.com/',
   domain: 'myapp.example.com',
   category: 'utility',
   tags: ['tools', 'productivity'],
-  released_at: new Date().toISOString()
+  release_date: new Date().toISOString()
 }
 
 const result = requireAppCatalogBroadcastSuccess(
@@ -107,7 +106,6 @@ const [myApp] = await catalog.findApps({ domain: 'myapp.example.com' })
 const updatedMetadata = {
   ...myApp.metadata,
   description: 'Updated description',
-  app_version: '0.2.0',
   changelog: 'Added new features'
 }
 
@@ -169,31 +167,31 @@ interface AppCatalogQuery {
 Metadata for a published app:
 
 ```typescript
-interface PublishedAppMetadataV2 {
-  schema_version: '2.0'
-  app_version: string
+interface PublishedAppMetadata {
+  version: '0.1.0'
   name: string
   description: string
-  icon_url: string // HTTPS or UHRP
-  launch_url?: string
-  uhrp_url?: string
+  icon: string // URL or UHRP
+  httpURL?: string
+  uhrpURL?: string
   domain: string
   publisher?: string // Automatically set by the library from wallet's identity key
-  publisher_name?: string // Human-readable publisher or author name
   short_name?: string
   category?: string
   tags?: string[]
-  released_at: string // ISO‑8601
+  release_date: string // ISO‑8601
   changelog?: string
   banner_image_url?: string
   screenshot_urls?: string[]
 }
 ```
 
-Legacy v0.1 metadata remains readable and is normalized with
-`normalizeAppMetadata`. New publications should use metadata v2. The protocol
-and canonical signing derivation are exported as `METANET_APPS_PROTOCOL` and
-`METANET_APPS_KEY_ID`; Apps overlays verify key ID `"1"`.
+The v0.1 shape is the canonical Apps metadata contract. Publisher names and
+profiles are resolved from the `publisher` identity key through BRC-100
+identity discovery and selectively disclosed certificates; they are not copied
+into app metadata. The protocol and canonical signing derivation are exported
+as `METANET_APPS_PROTOCOL` and `METANET_APPS_KEY_ID`; Apps overlays verify key
+ID `"1"`.
 
 ### `PublishedApp`
 

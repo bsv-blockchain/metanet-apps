@@ -75,7 +75,7 @@ export interface AppCatalogFindAcrossHostsResult {
  * On‑chain App metadata held inside the PushDrop token’s JSON payload.
  * Only the required fields below are mandatory; the rest are optional.
  */
-export interface LegacyPublishedAppMetadata {
+export interface PublishedAppMetadata {
   version: '0.1.0'
   name: string
   description: string
@@ -84,7 +84,6 @@ export interface LegacyPublishedAppMetadata {
   uhrpURL?: string
   domain: string
   publisher?: string // Automatically set by the library
-  publisher_name?: string
   short_name?: string
   category?: string
   tags?: string[]
@@ -92,56 +91,6 @@ export interface LegacyPublishedAppMetadata {
   changelog?: string
   banner_image_url?: string
   screenshot_urls?: string[]
-}
-
-export interface PublishedAppMetadataV2 {
-  schema_version: '2.0'
-  app_version: string
-  name: string
-  description: string
-  icon_url: string
-  domain: string
-  released_at: string
-  launch_url?: string
-  uhrp_url?: string
-  publisher?: string
-  publisher_name?: string
-  short_name?: string
-  category?: string
-  tags?: string[]
-  changelog?: string
-  banner_image_url?: string
-  screenshot_urls?: string[]
-  support_url?: string
-  contact_url?: string
-  privacy_url?: string
-  capabilities?: string[]
-}
-
-export type PublishedAppMetadata = LegacyPublishedAppMetadata | PublishedAppMetadataV2
-
-export interface NormalizedPublishedAppMetadata {
-  schema_version: '0.1.0' | '2.0'
-  app_version: string
-  name: string
-  description: string
-  icon_url: string
-  domain: string
-  released_at: string
-  launch_url?: string
-  uhrp_url?: string
-  publisher?: string
-  publisher_name?: string
-  short_name?: string
-  category?: string
-  tags: string[]
-  changelog?: string
-  banner_image_url?: string
-  screenshot_urls: string[]
-  support_url?: string
-  contact_url?: string
-  privacy_url?: string
-  capabilities: string[]
 }
 
 export interface PublishedApp {

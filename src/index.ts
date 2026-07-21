@@ -239,56 +239,6 @@ export class AppCatalog {
     return await broadcaster.broadcast(transaction)
   }
 
-  /**
-   * Spend a token created with a legacy derivation key and replace it with a
-   * token using the catalogue's canonical key. Intended for operator recovery.
-   */
-  async migrateLegacyApp (
-    prev: PublishedApp,
-    metadata: PublishedAppMetadata,
-    legacyKeyID: string
-  ): Promise<BroadcastResponse | BroadcastFailure> {
-    if (!prev.token.beef) throw new Error('App token must contain BEEF to migrate')
-
-    metadata.publisher = await this.getIdentityKey()
-    validateAppMetadata(metadata)
-    const payloadBytes = Utils.toArray(JSON.stringify(metadata), 'utf8')
-    const newLockingScript = await new PushDrop(this.wallet).lock(
-      [payloadBytes],
-      METANET_APPS_PROTOCOL,
-      this.keyID,
-      'anyone',
-      true
-    )
-    const prevOutpoint = `${prev.token.txid}.${prev.token.outputIndex}` as const
-    const { signableTransaction } = await this.wallet.createAction({
-      description: 'AppCatalog - migrate legacy app token',
-      inputBEEF: prev.token.beef,
-      inputs: [{
-        outpoint: prevOutpoint,
-        unlockingScriptLength: 74,
-        inputDescription: 'Spend legacy Metanet App token'
-      }],
-      outputs: [{
-        satoshis: 1,
-        lockingScript: newLockingScript.toHex(),
-        outputDescription: 'Migrated Metanet App token'
-      }],
-      options: { acceptDelayedBroadcast: this.acceptDelayedBroadcast, randomizeOutputs: false }
-    })
-    if (!signableTransaction) throw new Error('Unable to create migration transaction')
-
-    const unlocker = new PushDrop(this.wallet).unlock(METANET_APPS_PROTOCOL, legacyKeyID, 'anyone')
-    const unlockingScript = await unlocker.sign(Transaction.fromBEEF(signableTransaction.tx), 0)
-    const { tx } = await this.wallet.signAction({
-      reference: signableTransaction.reference,
-      spends: { 0: { unlockingScript: unlockingScript.toHex() } }
-    })
-    if (!tx) throw new Error('Unable to finalize migration transaction')
-
-    return await (await this.getBroadcaster()).broadcast(Transaction.fromAtomicBEEF(tx))
-  }
-
   /* ──────────────────────────────  Remove  ───────────────────────────── */
   /**
    * Removes an app listing from the overlay by spending its previous PushDrop output.
