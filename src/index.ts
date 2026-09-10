@@ -4,6 +4,7 @@ import {
   BroadcastResponse,
   HTTPSOverlayLookupFacilitator,
   LookupAnswer,
+  LookupFacilitatorAnswer,
   LookupResolver,
   PushDrop,
   TopicBroadcaster,
@@ -394,7 +395,7 @@ export class AppCatalog {
     return this.parseLookupAnswerWithStats(ans, includeBeef).apps
   }
 
-  private parseLookupAnswerWithStats(ans: LookupAnswer, includeBeef: boolean): ParsedLookupAnswer {
+  private parseLookupAnswerWithStats(ans: LookupFacilitatorAnswer, includeBeef: boolean): ParsedLookupAnswer {
     if (ans.type !== 'output-list' || !ans.outputs.length) {
       return { apps: [], outputCount: 0, parseFailureCount: 0 }
     }
