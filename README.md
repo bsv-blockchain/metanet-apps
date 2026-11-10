@@ -212,7 +212,7 @@ interface PublishedApp {
 
 ## License
 
-This project is licensed under the [Open BSV License](https://github.com/bitcoin-sv/bitcoin-sv/blob/master/LICENSE).
+This project is licensed under the [Apache License 2.0](LICENSE).
 
 ## Author
 

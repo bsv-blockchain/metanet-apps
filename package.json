@@ -11,10 +11,11 @@
   "module": "dist/esm/mod.js",
   "types": "dist/types/mod.d.ts",
   "files": [
+    "NOTICE",
     "dist",
     "src",
     "mod.ts",
-    "LICENSE.txt"
+    "LICENSE"
   ],
   "scripts": {
     "test": "npm run build && jest",
@@ -30,7 +31,7 @@
     "doc": "ts2md"
   },
   "author": "Peer-to-peer Privacy Systems Research, LLC",
-  "license": "Open BSV License",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@eslint/js": "^9.23.0",
     "@jest/globals": "^29.7.0",
