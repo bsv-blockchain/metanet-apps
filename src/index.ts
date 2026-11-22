@@ -5,6 +5,7 @@ import {
   HTTPSOverlayLookupFacilitator,
   LookupAnswer,
   LookupResolver,
+  OverlayLookupFacilitator,
   PushDrop,
   TopicBroadcaster,
   Transaction,
@@ -54,7 +55,7 @@ export class AppCatalog {
   private readonly overlayTopic: string
   private readonly overlayService: string
   private readonly wallet: WalletInterface
-  private readonly networkPreset: "mainnet" | "testnet" | "local" | undefined
+  private readonly networkPreset: AppCatalogOptions["networkPreset"]
   private readonly acceptDelayedBroadcast: boolean
   private cachedNetworkPromise: Promise<"mainnet" | "testnet" | "local"> | undefined
   private cachedIdentityKeyPromise: Promise<string> | undefined
@@ -70,7 +71,7 @@ export class AppCatalog {
     this.acceptDelayedBroadcast = opts.acceptDelayedBroadcast ?? false
   }
 
-  private async getNetwork(wallet: WalletInterface = this.wallet): Promise<"mainnet" | "testnet" | "local"> {
+  private async getNetwork(wallet: WalletInterface = this.wallet): Promise<NonNullable<AppCatalogOptions["networkPreset"]>> {
     if (this.networkPreset) return this.networkPreset
 
     if (wallet !== this.wallet) {
@@ -394,7 +395,10 @@ export class AppCatalog {
     return this.parseLookupAnswerWithStats(ans, includeBeef).apps
   }
 
-  private parseLookupAnswerWithStats(ans: LookupAnswer, includeBeef: boolean): ParsedLookupAnswer {
+  private parseLookupAnswerWithStats(
+    ans: Awaited<ReturnType<OverlayLookupFacilitator['lookup']>>,
+    includeBeef: boolean
+  ): ParsedLookupAnswer {
     if (ans.type !== 'output-list' || !ans.outputs.length) {
       return { apps: [], outputCount: 0, parseFailureCount: 0 }
     }

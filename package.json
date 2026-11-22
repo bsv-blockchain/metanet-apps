@@ -1,6 +1,6 @@
 {
   "name": "metanet-apps",
-  "version": "1.1.1",
+  "version": "2.0.0",
   "description": "Publish and find Metanet apps with ease",
   "repository": {
     "type": "git",
@@ -53,6 +53,9 @@
     "webpack-cli": "^6.0.1"
   },
   "dependencies": {
-    "@bsv/sdk": "^2.0.4"
+    "@bsv/sdk": "^4.1.2"
+  },
+  "engines": {
+    "node": ">=22"
   }
 }
