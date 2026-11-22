@@ -1,6 +1,6 @@
 # Metanet App Catalog
 
-A Typescript library for publishing and discovering applications on the Metanet.
+A TypeScript library for publishing and discovering applications on the Metanet.
 
 ## Overview
 
@@ -12,6 +12,8 @@ Metanet Apps allows developers to:
 - Build a decentralized app catalog
 
 ## Installation
+
+Requires Node.js 22 or later for Node consumers. Publishing, updating, and removing listings require an authorized BRC-100 wallet. Public discovery through explicit overlay hosts does not need wallet access.
 
 ```bash
 npm install metanet-apps
@@ -25,7 +27,8 @@ npm install metanet-apps
 import {
   AppCatalog,
   DEFAULT_APP_LOOKUP_HOSTS,
-  requireAppCatalogBroadcastSuccess
+  requireAppCatalogBroadcastSuccess,
+  type PublishedAppMetadata
 } from 'metanet-apps'
 
 const catalog = new AppCatalog({
@@ -40,7 +43,7 @@ const catalog = new AppCatalog({
 ### Publishing a New App
 
 ```typescript
-const appMetadata = {
+const appMetadata: PublishedAppMetadata = {
   version: '0.1.0',
   name: 'My Awesome App',
   description: 'This app does amazing things on Metanet',
@@ -96,23 +99,42 @@ console.log(apps.length)
 console.table(diagnostics.hosts)
 ```
 
-### Updating an App
+### Update or remove a listing
+
+Request the current token at its exact outpoint and keep the BEEF required to
+spend it. After an update succeeds, look up the replacement token independently
+once it has been indexed. Removal spends that current token.
 
 ```typescript
-// First, find the app you want to update
-const [myApp] = await catalog.findApps({ domain: 'myapp.example.com' })
+const [listing] = await catalog.findApps(
+  { outpoint: currentOutpoint },
+  { includeBeef: true }
+)
+if (!listing) throw new Error('The current listing is not available yet.')
 
-// Create updated metadata
-const updatedMetadata = {
-  ...myApp.metadata,
-  description: 'Updated description',
-  changelog: 'Added new features'
-}
+const updated = requireAppCatalogBroadcastSuccess(
+  await catalog.updateApp(listing, {
+    ...listing.metadata,
+    description: 'Updated description'
+  })
+)
+console.log('Update accepted:', updated.txid)
 
-// Send the update
-const result = await catalog.updateApp(myApp, updatedMetadata)
-console.log('Updated app:', result)
+// Run after the replacement has been indexed and you intend to remove it.
+const [replacement] = await catalog.findApps(
+  { outpoint: replacementOutpoint },
+  { includeBeef: true }
+)
+if (!replacement) throw new Error('The replacement listing is not available yet.')
+requireAppCatalogBroadcastSuccess(await catalog.removeApp(replacement))
 ```
+
+`currentOutpoint` and `replacementOutpoint` are the exact `txid.outputIndex`
+strings returned by your indexer. Check a resolved broadcast failure with
+`requireAppCatalogBroadcastSuccess` and reconcile the outpoint before trying
+another wallet action. See the [offline lifecycle fixture](./src/lifecycle.test.ts)
+for a runnable example that uses the SDK to sign, serialize, look up, update
+and spend a listing without submitting live transactions.
 
 ## API Reference
 

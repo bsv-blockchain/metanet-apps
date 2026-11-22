@@ -1,4 +1,4 @@
-import { LockingScript, OP, PrivateKey, ProtoWallet, Spend, TopicBroadcaster, Transaction, UnlockingScript } from '@bsv/sdk'
+import { HTTPSOverlayLookupFacilitator, LockingScript, OP, PrivateKey, ProtoWallet, Spend, TopicBroadcaster, Transaction, UnlockingScript } from '@bsv/sdk'
 import type { CreateActionArgs, SignActionArgs, WalletInterface } from '@bsv/sdk'
 import { AppCatalog } from './index.js'
 import type { PublishedAppMetadata } from './types/index.js'
@@ -71,11 +71,18 @@ describe('AppCatalog lifecycle with SDK 4', () => {
     const findToken = async (tx: Transaction) => {
       const apps = await catalog.findApps({}, {
         hosts: ['https://overlay.example'],
-        facilitator: {
-          async lookup () {
-            return { type: 'output-list', outputs: [{ beef: tx.toBEEF(), outputIndex: 0 }] }
-          }
-        }
+        facilitator: new HTTPSOverlayLookupFacilitator(async (url, request) => {
+          expect(String(url)).toBe('https://overlay.example/lookup')
+          expect(request?.method).toBe('POST')
+          expect(JSON.parse(String(request?.body))).toEqual({
+            service: 'ls_apps',
+            query: {}
+          })
+          return new Response(JSON.stringify({
+            type: 'output-list',
+            outputs: [{ beef: tx.toBEEF(), outputIndex: 0 }]
+          }), { headers: { 'Content-Type': 'application/json' } })
+        })
       })
       expect(apps).toHaveLength(1)
       expect(apps[0].metadata.publisher).toBe((await identity.getPublicKey({ identityKey: true })).publicKey)
